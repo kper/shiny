@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::fetch_unop;
 use crate::value::Value::I32;
-use anyhow::{anyhow, Context, Result, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use wasm_parser::core::FuncAddr;
 
 impl Engine {
@@ -29,9 +29,7 @@ impl Engine {
             x => bail!("invalid index type: {:?}", x),
         };
         if (i as usize) >= tab.elem.len() {
-            bail!(
-                "Attempt to perform indirect call to index larger than the table"
-            );
+            bail!("Attempt to perform indirect call to index larger than the table");
         }
 
         debug!("after i");

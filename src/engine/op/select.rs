@@ -1,8 +1,8 @@
+use crate::engine::stack::StackContent;
 use crate::engine::Engine;
 use crate::fetch_binop;
 use crate::value::Value::I32;
 use anyhow::{anyhow, Result};
-use crate::engine::stack::StackContent;
 
 impl Engine {
     pub(crate) fn select(&mut self) -> Result<()> {

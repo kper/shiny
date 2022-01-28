@@ -42,7 +42,10 @@ pub struct Label {
 impl Label {
     /// Create new label
     pub fn new(arity: Arity, block_id: usize) -> Self {
-        Label { arity, start_block_id: block_id }
+        Label {
+            arity,
+            start_block_id: block_id,
+        }
     }
 
     /// Get the arity of the label

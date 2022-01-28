@@ -1,7 +1,7 @@
 use crate::engine::stack::Frame;
 use crate::engine::stack::StackContent;
 use crate::engine::Engine;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use wasm_parser::core::GlobalIdx;
 
 impl Engine {

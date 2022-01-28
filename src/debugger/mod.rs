@@ -13,7 +13,7 @@ use std::sync::mpsc::{Receiver, Sender};
 pub struct BorrowedProgramState<'a> {
     current_pc: usize,
     stack: &'a [StackContent],
-    locals: &'a [Value]
+    locals: &'a [Value],
 }
 
 impl<'a> BorrowedProgramState<'a> {
@@ -31,7 +31,7 @@ impl<'a> From<BorrowedProgramState<'a>> for ProgramState {
         ProgramState {
             current_pc: state.current_pc,
             stack: state.stack.to_vec(),
-            locals: state.locals.to_vec()
+            locals: state.locals.to_vec(),
         }
     }
 }

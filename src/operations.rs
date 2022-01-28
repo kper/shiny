@@ -234,7 +234,10 @@ pub fn reinterpret(v: Value) -> Value {
 macro_rules! convert {
     ($self:expr, $val:ident, $from_ctr:ident, $to_ctr:ident, $to:ident) => {
         match $val {
-            $from_ctr(i) => $self.store.stack.push(StackContent::Value($to_ctr(i as $to))),
+            $from_ctr(i) => $self
+                .store
+                .stack
+                .push(StackContent::Value($to_ctr(i as $to))),
             x => return Err(anyhow!("Expected $from_ctr on stack but found {:?}", x)),
         }
     };

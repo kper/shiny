@@ -15,12 +15,8 @@ impl Engine {
 
                 Ok(())
             }
-            Some(x) => {
-                Err(anyhow!("Expected value but found {:?}", x))
-            }
-            None => {
-                Err(anyhow!("Empty stack during local.tee"))
-            }
+            Some(x) => Err(anyhow!("Expected value but found {:?}", x)),
+            None => Err(anyhow!("Empty stack during local.tee")),
         }
     }
 }

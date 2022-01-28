@@ -78,10 +78,13 @@ impl TestFile {
             .count()
     }
 
-    pub fn get_cases(&self) -> impl Iterator<Item=&Command> {
-        self.commands.iter().filter(
-            |x| matches!(x, Command::Module(_) | Command::AssertReturn(_) | Command::Action(_)),
-        )
+    pub fn get_cases(&self) -> impl Iterator<Item = &Command> {
+        self.commands.iter().filter(|x| {
+            matches!(
+                x,
+                Command::Module(_) | Command::AssertReturn(_) | Command::Action(_)
+            )
+        })
     }
 
     pub fn get_fs_names(&self) -> Vec<&String> {
@@ -183,14 +186,9 @@ impl TestFile {
 
         let mut extracted_actuals = match case.action.ty {
             ActionType::Invoke => {
-                debug!(
-                    "Invoking with {} and {:?}",
-                    &case.action.field,
-                    args
-                );
+                debug!("Invoking with {} and {:?}", &case.action.field, args);
 
-                if let Err(err) =
-                engine.invoke_exported_function_by_name(&case.action.field, args)
+                if let Err(err) = engine.invoke_exported_function_by_name(&case.action.field, args)
                 {
                     debug!("failed for lineno {}", case.line);
                     return false;

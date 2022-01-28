@@ -1,8 +1,8 @@
 use crate::debugger::RelativeProgramCounter;
 use crate::engine::export::ExportInstance;
 use crate::engine::module::ModuleInstance;
-use crate::engine::*;
 use crate::engine::stack::StackContent;
+use crate::engine::*;
 use crate::value::Value::*;
 use crate::value::*;
 use crate::wrap_instructions;
@@ -24,8 +24,9 @@ macro_rules! test_file_engine {
             &functions,
             &module,
             Box::new(RelativeProgramCounter::default()),
-            &imports
-        ).unwrap();
+            &imports,
+        )
+        .unwrap();
 
         assert_snapshot!($fs_name, format!("{:#?}", engine));
     };
@@ -46,7 +47,8 @@ macro_rules! test_run_engine {
             &module,
             Box::new(crate::debugger::RelativeProgramCounter::default()),
             &imports,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_snapshot!($fs_name, format!("{:#?}", engine));
 
@@ -77,8 +79,9 @@ macro_rules! test_get_exported_global {
             &functions,
             &module,
             Box::new(crate::debugger::RelativeProgramCounter::default()),
-            &imports
-        ).unwrap();
+            &imports,
+        )
+        .unwrap();
 
         assert_snapshot!($fs_name, format!("{:#?}", engine));
 
@@ -100,7 +103,7 @@ macro_rules! allocation {
             &functions,
             &module,
             Box::new(RelativeProgramCounter::default()),
-            &imports
+            &imports,
         );
 
         engine.unwrap()
@@ -146,8 +149,22 @@ fn test_allocation_funcs() {
     // Store has an entry for func instance
 
     assert_eq!(1, engine.store.count_functions());
-    assert_eq!(sig, engine.store.get_func_instance(&FuncAddr::new(0)).unwrap().ty);
-    assert_eq!(body, engine.store.get_func_instance(&FuncAddr::new(0)).unwrap().code);
+    assert_eq!(
+        sig,
+        engine
+            .store
+            .get_func_instance(&FuncAddr::new(0))
+            .unwrap()
+            .ty
+    );
+    assert_eq!(
+        body,
+        engine
+            .store
+            .get_func_instance(&FuncAddr::new(0))
+            .unwrap()
+            .code
+    );
 }
 
 #[test]
@@ -163,7 +180,15 @@ fn test_allocation_tables_zero() {
     // Store has a table instance
 
     assert_eq!(1, engine.module_instance.get_table_addrs().len());
-    assert_eq!(0, engine.module_instance.get_table_addrs().get(0).unwrap().get());
+    assert_eq!(
+        0,
+        engine
+            .module_instance
+            .get_table_addrs()
+            .get(0)
+            .unwrap()
+            .get()
+    );
 
     assert_eq!(1, engine.store.tables.len());
     assert_eq!(10, engine.store.tables[0].elem.len());
@@ -184,7 +209,15 @@ fn test_allocation_tables_one() {
     // Store has a table instance
 
     assert_eq!(1, engine.module_instance.get_table_addrs().len());
-    assert_eq!(0, engine.module_instance.get_table_addrs().get(0).unwrap().get());
+    assert_eq!(
+        0,
+        engine
+            .module_instance
+            .get_table_addrs()
+            .get(0)
+            .unwrap()
+            .get()
+    );
 
     assert_eq!(1, engine.store.tables.len());
     assert_eq!(10, engine.store.tables[0].elem.len());
@@ -204,7 +237,10 @@ fn test_allocation_memories_zero() {
     // Store has a memory instance
 
     assert_eq!(1, engine.module_instance.get_mem_addrs().len());
-    assert_eq!(0, engine.module_instance.get_mem_addrs().get(0).unwrap().get());
+    assert_eq!(
+        0,
+        engine.module_instance.get_mem_addrs().get(0).unwrap().get()
+    );
 
     assert_eq!(1, engine.store.memory.len());
     assert_eq!(10 * 1024 * 64, engine.store.memory[0].data.len());
@@ -224,7 +260,10 @@ fn test_allocation_memories_one() {
     // Store has a memory instance
 
     assert_eq!(1, engine.module_instance.get_mem_addrs().len());
-    assert_eq!(0, engine.module_instance.get_mem_addrs().get(0).unwrap().get());
+    assert_eq!(
+        0,
+        engine.module_instance.get_mem_addrs().get(0).unwrap().get()
+    );
 
     assert_eq!(1, engine.store.memory.len());
     assert_eq!(10 * 1024 * 64, engine.store.memory[0].data.len());
@@ -248,7 +287,10 @@ fn test_allocation_globals() {
     // Store has a global instance
 
     assert_eq!(1, engine.module_instance.get_global_addrs().len());
-    assert_eq!(Some(&GlobalAddr::new(0)), engine.module_instance.get_global_addrs().get(0));
+    assert_eq!(
+        Some(&GlobalAddr::new(0)),
+        engine.module_instance.get_global_addrs().get(0)
+    );
 
     assert_eq!(1, engine.store.globals.len());
     assert_eq!(

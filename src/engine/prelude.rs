@@ -1,11 +1,11 @@
 pub use crate::convert;
 pub use crate::debugger::ProgramState;
 pub use crate::debugger::{ProgramCounter, RelativeProgramCounter};
-pub use crate::store::Store;
 pub use crate::engine::stack::StackContent::*;
-pub use crate::engine::stack::{Label, Frame};
+pub use crate::engine::stack::{Frame, Label};
 pub use crate::operations::*;
 pub use crate::page::Page;
+pub use crate::store::Store;
 pub use crate::value::{Arity, Value, Value::*};
 pub use crate::PAGE_SIZE;
 pub use anyhow::{anyhow, Context, Result};

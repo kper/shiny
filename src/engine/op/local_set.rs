@@ -1,6 +1,6 @@
 use crate::engine::stack::{Frame, StackContent};
 use crate::engine::Engine;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use wasm_parser::core::LocalIdx;
 
 impl Engine {

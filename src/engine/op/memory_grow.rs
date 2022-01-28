@@ -1,10 +1,10 @@
-use crate::engine::Engine;
 use crate::engine::memory::grow_memory;
-use crate::value::Value::I32;
 use crate::engine::stack::StackContent;
-use crate::PAGE_SIZE;
-use anyhow::{anyhow, Result, Context};
+use crate::engine::Engine;
 use crate::engine::Page;
+use crate::value::Value::I32;
+use crate::PAGE_SIZE;
+use anyhow::{anyhow, Context, Result};
 
 impl Engine {
     pub(crate) fn memory_grow(&mut self) -> Result<()> {

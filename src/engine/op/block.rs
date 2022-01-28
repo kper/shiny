@@ -59,8 +59,7 @@ impl Engine {
             param_count
         );
 
-        self
-            .store
+        self.store
             .stack
             .split_off(self.store.stack.len() - param_count as usize)
     }

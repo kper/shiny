@@ -1,8 +1,8 @@
 use crate::engine::import_resolver::{Import, ImportResolver};
 use crate::engine::memory::MemoryInstance;
+use crate::engine::module::Functions;
 use crate::engine::store::Store;
 use crate::engine::*;
-use crate::engine::module::Functions;
 use crate::value::Value;
 use wasm_parser::core::*;
 use wasm_parser::Module;
@@ -26,7 +26,8 @@ pub fn allocate(
     let imports = create_import_resolver(&imports_entries, imports)?;
 
     // Step 2a and 6
-    allocate_functions(m, mod_instance, functions, store).context("Allocating function instances failed")?;
+    allocate_functions(m, mod_instance, functions, store)
+        .context("Allocating function instances failed")?;
     //TODO host functions
 
     // Step 3a and 7
@@ -222,7 +223,11 @@ fn allocate_tables(
     Ok(())
 }
 
-fn allocate_memories(m: &Module, mod_instance: &mut ModuleInstance, store: &mut Store) -> Result<()> {
+fn allocate_memories(
+    m: &Module,
+    mod_instance: &mut ModuleInstance,
+    store: &mut Store,
+) -> Result<()> {
     debug!("allocate memories");
     // Gets all memories and imports
     let ty = validation::extract::get_mems(&m);
@@ -293,7 +298,11 @@ fn allocate_globals(
     Ok(())
 }
 
-fn allocate_exports(m: &Module, mod_instance: &mut ModuleInstance, _store: &mut Store) -> Result<()> {
+fn allocate_exports(
+    m: &Module,
+    mod_instance: &mut ModuleInstance,
+    _store: &mut Store,
+) -> Result<()> {
     debug!("allocate exports");
 
     // Gets all exports
@@ -330,7 +339,8 @@ pub(crate) fn get_expr_const_ty_global(
         OP_F32_CONST(v) => Ok(Value::F32(*v)),
         OP_F64_CONST(v) => Ok(Value::F64(*v)),
         OP_GLOBAL_GET(idx) => {
-            let addr = mod_instance.lookup_global_addr(idx)
+            let addr = mod_instance
+                .lookup_global_addr(idx)
                 .context("Cannot find global addr by index")?;
             let global_instance = store.get_global_instance(addr)?;
 

@@ -1,4 +1,4 @@
-use wasm_parser::core::{ExternalKindType, ExportEntry};
+use wasm_parser::core::{ExportEntry, ExternalKindType};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportInstance {

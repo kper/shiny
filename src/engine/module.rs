@@ -1,5 +1,5 @@
 use crate::engine::export::ExportInstance;
-use anyhow::{Result};
+use anyhow::Result;
 use wasm_parser::core::*;
 use wasm_parser::Module;
 
@@ -29,18 +29,32 @@ impl ModuleInstance {
 
         let mut functions = Vec::new();
 
-        let code_sections = m.sections.iter().filter(|x| match x {
-            Section::Code(..) => true,
-            _ => false
-        }).count();
+        let code_sections = m
+            .sections
+            .iter()
+            .filter(|x| match x {
+                Section::Code(..) => true,
+                _ => false,
+            })
+            .count();
 
-        let type_sections = m.sections.iter().filter(|x| match x {
-            Section::Type(..) => true,
-            _ => false
-        }).count();
+        let type_sections = m
+            .sections
+            .iter()
+            .filter(|x| match x {
+                Section::Type(..) => true,
+                _ => false,
+            })
+            .count();
 
-        assert!(!(code_sections > 1), "A module cannot have multiple code sections.");
-        assert!(!(type_sections > 1), "A module cannot have multiple type sections.");
+        assert!(
+            !(code_sections > 1),
+            "A module cannot have multiple code sections."
+        );
+        assert!(
+            !(type_sections > 1),
+            "A module cannot have multiple type sections."
+        );
 
         for section in m.sections.iter() {
             match section {
@@ -73,27 +87,19 @@ impl ModuleInstance {
 
     /// Looking up the function's address in the store by given function's module address.
     pub fn lookup_function_addr(&self, idx: &FuncIdx) -> Option<&FuncAddr> {
-        self
-            .func_addrs
-            .get((*idx) as usize)
+        self.func_addrs.get((*idx) as usize)
     }
 
     pub fn lookup_table_addr(&self, idx: &TableIdx) -> Option<&TableAddr> {
-        self
-            .table_addrs
-            .get(*idx as usize)
+        self.table_addrs.get(*idx as usize)
     }
 
     pub fn lookup_memory_addr(&self, idx: &MemoryIdx) -> Option<&MemoryAddr> {
-        self
-            .mem_addrs
-            .get(*idx as usize)
+        self.mem_addrs.get(*idx as usize)
     }
 
     pub fn lookup_global_addr(&self, idx: &GlobalIdx) -> Option<&GlobalAddr> {
-        self
-            .global_addrs
-            .get(*idx as usize)
+        self.global_addrs.get(*idx as usize)
     }
 
     /// Looking up the the func type with given index.

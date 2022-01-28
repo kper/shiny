@@ -1,6 +1,6 @@
+use crate::core::*;
 use funky::value::Value;
 use serde::Deserialize;
-use crate::core::*;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(tag = "type")]
@@ -37,10 +37,7 @@ pub(crate) struct FailedCommand {
 
 impl FailedCommand {
     pub fn new(actuals: Vec<Value>, command: Command) -> Self {
-        Self {
-            actuals,
-            command
-        }
+        Self { actuals, command }
     }
 }
 
@@ -90,7 +87,7 @@ pub(crate) struct Action {
     #[serde(default = "Vec::new")]
     pub args: Vec<Argument>,
     #[serde(rename = "type")]
-    pub ty: ActionType, 
+    pub ty: ActionType,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]

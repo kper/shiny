@@ -1,6 +1,5 @@
 #![allow(clippy::clippy::upper_case_acronyms)]
 
-use custom_display::CustomDisplay;
 use serde::{Deserialize, Serialize};
 
 pub type FuncIdx = u32;
@@ -73,7 +72,7 @@ pub enum BlockType {
     ValueType(ValueType),
     /// The signature of the block
     /// is defined as function definition
-    FuncTy(u32), // this is actually a FuncIdx, but it is required to have s33
+    FuncTy(i32), // this is actually a FuncIdx, but it is required to have s33
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -99,6 +98,7 @@ pub enum ExternalKindType {
     Global { ty: GlobalIdx },
 }
 
+/// The sections of a webassembly module.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum Section {
     Custom(CustomSection),
@@ -378,7 +378,7 @@ impl InstructionWrapper {
 }
 
 /// Internal representation of web assembly's opcodes
-#[derive(Debug, CustomDisplay, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[allow(non_snake_case)]
 #[allow(non_camel_case_types)]
 #[allow(unused_variables)]

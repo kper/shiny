@@ -93,7 +93,6 @@ pub fn read_i32_leb128(input: &[u8]) -> (i32, usize) {
         result |= !0 << shift;
     }
 
-
     (result, bytes_read)
 }
 
@@ -132,7 +131,6 @@ pub fn read_i64_leb128(input: &[u8]) -> (i64, usize) {
         result |= !0 << shift;
     }
 
-
     (result, bytes_read)
 }
 
@@ -170,7 +168,6 @@ pub fn read_i33_leb128(input: &[u8]) -> (i64, usize) {
         // Sign extend the result.
         result |= !0 << shift;
     }
-
 
     (result, bytes_read)
 }

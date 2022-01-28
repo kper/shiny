@@ -1,8 +1,8 @@
 use crate::engine::Engine;
-use crate::value::Value::I32;
-use anyhow::{Result, Context};
-use crate::PAGE_SIZE;
 use crate::engine::StackContent;
+use crate::value::Value::I32;
+use crate::PAGE_SIZE;
+use anyhow::{Context, Result};
 
 impl Engine {
     pub(crate) fn memory_size(&mut self) -> Result<()> {

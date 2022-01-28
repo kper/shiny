@@ -1,5 +1,5 @@
-use crate::engine::{Engine};
 use crate::engine::stack::StackContent;
+use crate::engine::Engine;
 use crate::value::Value;
 use anyhow::{bail, Context, Result};
 use wasm_parser::core::FuncAddr;
@@ -49,20 +49,19 @@ impl Engine {
             return Ok(vec![]);
         }
 
-        let mut args =  Vec::new();
+        let mut args = Vec::new();
 
         while param_count > 0 {
             if let Some(StackContent::Value(val)) = self.store.stack.pop() {
                 args.push(val);
-            } 
-            else {
+            } else {
                 bail!("No value left at the stack.");
             }
 
             param_count -= 1;
         }
 
-        let args  = args.into_iter().rev().collect::<Vec<_>>();
+        let args = args.into_iter().rev().collect::<Vec<_>>();
 
         debug!("=> Stack is {:#?}", self.store.stack);
         debug!("=> args {:#?}", args);

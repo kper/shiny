@@ -20,9 +20,7 @@ impl Engine {
             "Getting label at {}",
             labels.len() as isize - 1 - label_idx as isize
         );
-        let label = labels
-            .get(labels.len() - 1 - label_idx as usize)
-            .copied();
+        let label = labels.get(labels.len() - 1 - label_idx as usize).copied();
 
         if let Some(StackContent::Label(lb)) = label {
             let arity = lb.get_arity();

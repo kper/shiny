@@ -39,9 +39,8 @@ fn main() {
 
     if !args.flag_no_output {
         if args.flag_json {
-            println!("{}", serde_json::to_string_pretty(&module).unwrap()); 
-        }
-        else {
+            println!("{}", serde_json::to_string_pretty(&module).unwrap());
+        } else {
             println!("{:#?}", module);
         }
     }

@@ -21,8 +21,8 @@ pub use crate::debugger::BorrowedProgramState;
 pub use crate::debugger::{ProgramCounter, RelativeProgramCounter};
 use crate::engine::func::FuncInstance;
 use crate::engine::import_resolver::Import;
-use crate::engine::module::ModuleInstance;
 use crate::engine::module::Functions;
+use crate::engine::module::ModuleInstance;
 pub use crate::engine::store::GlobalInstance;
 pub use crate::engine::table::TableInstance;
 use crate::operations::*;
@@ -112,7 +112,8 @@ macro_rules! load_memory {
 
             let module = &$self.module_instance;
 
-            let addr = module.lookup_memory_addr(&0)
+            let addr = module
+                .lookup_memory_addr(&0)
                 .context("No memory address found")?;
 
             let instance = &$self.store.memory[addr.get()];
@@ -149,7 +150,9 @@ macro_rules! load_memory_sx {
 
             let module = &$self.module_instance;
 
-            let addr = module.lookup_memory_addr(&0).context("No memory address found")?;
+            let addr = module
+                .lookup_memory_addr(&0)
+                .context("No memory address found")?;
 
             let instance = &$self
                 .store
@@ -211,7 +214,9 @@ macro_rules! store_memory {
 
                 let module = &$self.module_instance;
 
-                let addr = module.lookup_memory_addr(&0).context("No memory address found")?;
+                let addr = module
+                    .lookup_memory_addr(&0)
+                    .context("No memory address found")?;
 
                 let instance = &mut $self.store.memory[addr.get()];
 
@@ -238,7 +243,9 @@ macro_rules! store_memory_n {
 
                 let module = &$self.module_instance;
 
-                let addr = module.lookup_memory_addr(&0).context("No memory address found")?;
+                let addr = module
+                    .lookup_memory_addr(&0)
+                    .context("No memory address found")?;
 
                 let instance = &mut $self.store.memory[addr.get()];
 
@@ -297,16 +304,23 @@ impl Engine {
 
     fn allocate(&mut self, m: &Module, functions: &Functions, imports: &[Import]) -> Result<()> {
         info!("Allocation");
-        crate::allocation::allocate(m, &mut self.module_instance, functions, &mut self.store, imports)
-            .context("Allocation failed")?;
+        crate::allocation::allocate(
+            m,
+            &mut self.module_instance,
+            functions,
+            &mut self.store,
+            imports,
+        )
+        .context("Allocation failed")?;
 
         Ok(())
     }
 
     pub fn instantiation(&mut self, m: &Module) -> Result<()> {
         info!("Instantiation");
-        let start_function = crate::instantiation::instantiation(m, &self.module_instance, &mut self.store)
-            .context("Instantiation failed")?;
+        let start_function =
+            crate::instantiation::instantiation(m, &self.module_instance, &mut self.store)
+                .context("Instantiation failed")?;
 
         if let Some(func_addr) = start_function {
             debug!("Invoking start function with {:?}", func_addr);
@@ -321,7 +335,9 @@ impl Engine {
     pub fn get(&mut self, name: &str) -> Result<Value> {
         debug!("get global for {:?}", name);
 
-        let export_instance = self.module_instance.get_export_instance_by_name(name)
+        let export_instance = self
+            .module_instance
+            .get_export_instance_by_name(name)
             .ok_or_else(|| anyhow!("Export instance was not found by name: {}", name))?;
         debug!("Export {:#?}", export_instance);
 
@@ -329,7 +345,9 @@ impl Engine {
             ExternalKindType::Global { ty } => {
                 // The external type of the export is a global.
 
-                let global_addr = self.module_instance.lookup_global_addr(&ty)
+                let global_addr = self
+                    .module_instance
+                    .lookup_global_addr(&ty)
                     .context("Global not found")?;
 
                 Ok(self
@@ -344,7 +362,11 @@ impl Engine {
 
     /// Adding new function to the engine
     /// It will allocate the function in store and add it to the module's code.
-    pub(crate) fn add_function(&mut self, signature: FunctionSignature, body: FunctionBody) -> Result<()> {
+    pub(crate) fn add_function(
+        &mut self,
+        signature: FunctionSignature,
+        body: FunctionBody,
+    ) -> Result<()> {
         //self.module_instance.add_code(body.clone())?;
         self.store.allocate_func_instance(signature, body);
 
@@ -374,7 +396,10 @@ impl Engine {
         let k = {
             let x = &self.module_instance;
 
-            debug!("the export instance is {:?}", x.get_export_instance(idx as usize));
+            debug!(
+                "the export instance is {:?}",
+                x.get_export_instance(idx as usize)
+            );
 
             let w = x
                 .get_export_instance(idx as usize)
@@ -387,7 +412,9 @@ impl Engine {
 
         match k {
             ExternalKindType::Function { ty } => {
-                let func_addr = self.module_instance.lookup_function_addr(&ty)
+                let func_addr = self
+                    .module_instance
+                    .lookup_function_addr(&ty)
                     .ok_or_else(|| anyhow!("Cannot find function's addr"))?
                     .clone();
 
@@ -426,8 +453,11 @@ impl Engine {
         self.check_parameters_of_function(&func_addr, &args)
             .with_context(|| format!("Checking parameter for function {:?} failed", func_addr))?;
 
-        let count_return_types =
-            self.get_function_instance(&func_addr)?.ty.return_types.len() as u32;
+        let count_return_types = self
+            .get_function_instance(&func_addr)?
+            .ty
+            .return_types
+            .len() as u32;
 
         let typed_locals = &self.store.get_func_instance(&func_addr)?.code.locals;
 
@@ -599,7 +629,7 @@ impl Engine {
     fn run_instructions<'a>(
         &mut self,
         fr: &mut Frame,
-        instruction_wrapper: &'a mut impl std::iter::Iterator<Item=&'a InstructionWrapper>,
+        instruction_wrapper: &'a mut impl std::iter::Iterator<Item = &'a InstructionWrapper>,
     ) -> Result<InstructionOutcome> {
         //let mut ip = 0;
         for wrapped_instruction in instruction_wrapper {
@@ -1363,8 +1393,11 @@ impl Engine {
                     }
                 }
                 OP_CALL(function_module_addr) => {
-                    let func_addr = self.module_instance.lookup_function_addr(function_module_addr)
-                        .ok_or_else(|| anyhow!("Cannot find function's addr"))?.clone();
+                    let func_addr = self
+                        .module_instance
+                        .lookup_function_addr(function_module_addr)
+                        .ok_or_else(|| anyhow!("Cannot find function's addr"))?
+                        .clone();
                     let func_addr_inner = func_addr.get();
                     self.call_function(func_addr).with_context(|| {
                         format!(
@@ -1374,8 +1407,11 @@ impl Engine {
                     })?;
                 }
                 OP_CALL_INDIRECT(function_module_addr) => {
-                    let func_addr = self.module_instance.lookup_function_addr(function_module_addr)
-                        .ok_or_else(|| anyhow!("Cannot find function's addr"))?.clone();
+                    let func_addr = self
+                        .module_instance
+                        .lookup_function_addr(function_module_addr)
+                        .ok_or_else(|| anyhow!("Cannot find function's addr"))?
+                        .clone();
                     let func_addr_inner = func_addr.get();
                     self.call_indirect_function(func_addr).with_context(|| {
                         format!(

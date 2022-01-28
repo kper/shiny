@@ -4,10 +4,10 @@ use crate::engine::stack::StackContent;
 use crate::engine::stack::Frame;
 use crate::engine::Variable;
 use crate::engine::{FuncInstance, TableInstance};
-use wasm_parser::core::{FuncAddr, GlobalAddr, FunctionBody, FunctionSignature};
+use wasm_parser::core::{FuncAddr, FunctionBody, FunctionSignature, GlobalAddr};
 
 use crate::PAGE_SIZE;
-use anyhow::{anyhow, Result, bail};
+use anyhow::{anyhow, bail, Result};
 
 pub type GlobalInstance = Variable;
 
@@ -101,9 +101,11 @@ impl Store {
                 debug!("Popping off {:?}", val);
                 result.push(val);
                 n -= 1;
-            }
-            else {
-                bail!("The stack was unexpectedly empty while popping {} elements of the stack", n);
+            } else {
+                bail!(
+                    "The stack was unexpectedly empty while popping {} elements of the stack",
+                    n
+                );
             }
         }
 

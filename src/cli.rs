@@ -1,7 +1,7 @@
-use regex::Regex;
-use regex::RegexSet;
 use crate::value::Value;
 use crate::value::Value::*;
+use regex::Regex;
+use regex::RegexSet;
 
 pub fn parse_args(args: Vec<String>) -> Vec<Value> {
     let matchers = &[
