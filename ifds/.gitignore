@@ -1,6 +1,0 @@
-target
-benchmark_results.csv
-.idea
-src/tests/icfg/snapshots/graph*
-src/tests/verification/snapshots/graph*
-benchmark_suite
