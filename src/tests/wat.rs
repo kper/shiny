@@ -39,7 +39,7 @@ macro_rules! wat {
 
         // Read it
         let file = read_wasm!(file_path);
-        let module = parse(file).expect("Parsing failed");
+        let module = parse(file.as_slice()).expect("Parsing failed");
         assert!(validate(&module).is_ok());
 
         let imports = Vec::new();

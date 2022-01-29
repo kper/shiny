@@ -1,4 +1,5 @@
 #![allow(clippy::same_item_push)]
+#![feature(buf_read_has_data_left)]
 
 extern crate log;
 
@@ -19,8 +20,11 @@ use nom::multi::{count, many0};
 use nom::IResult;
 use serde::{Deserialize, Serialize};
 
+use std::io::prelude::*;
+use std::io::BufReader;
+
 pub const MAGIC_NUMBER: &[u8] = &[0, 97, 115, 109];
-const END_INSTR: &[u8] = &[0x0B];
+const END_INSTR: [u8; 1] = [0x0B];
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Module {
@@ -42,37 +46,75 @@ macro_rules! read_wasm {
     }};
 }
 
-pub fn parse(content: Vec<u8>) -> Result<Module> {
-    let slice = content.as_slice();
+#[macro_export]
+macro_rules! consume {
+    ($reader:expr, $num:expr) => {{
+        use std::io::prelude::*;
+        let mut tmp: Vec<u8> = Vec::with_capacity($num as usize);
+        let _ = $reader.read_exact(&mut tmp).unwrap();
 
-    let parsed = parse_module(slice).expect("Parsing failed");
+        tmp
+    }};
+}
 
-    let (_, sections) = parsed;
+#[macro_export]
+macro_rules! consume_byte {
+    ($reader:expr) => {{
+        use std::io::prelude::*;
+        let mut tmp: [u8; 1] = [0u8; 1];
+        let _ = $reader.read_exact(&mut tmp).unwrap();
+
+        tmp
+    }};
+}
+
+#[macro_export]
+macro_rules! consume_up_to {
+    ($reader:expr, $num:expr) => {{
+        use std::io::prelude::*;
+        let mut tmp = [0u8; $num as usize];
+        let _ = $reader.read(&mut tmp).unwrap();
+
+        tmp
+    }};
+}
+
+type Bytes<'a> = &'a [u8];
+type BytesReader<'a> = BufReader<Bytes<'a>>;
+
+/// Parses a vector of bytes into a webassembly module.
+pub fn parse(content: Bytes) -> Result<Module> {
+    let mut buf_reader = BufReader::new(content);
+
+    let sections = parse_module(buf_reader).expect("Parsing failed");
+
     Ok(Module { sections })
 }
 
-fn parse_module(i: &[u8]) -> IResult<&[u8], Vec<Section>> {
-    let (i, magic) = take_until_magic_number(i)?;
+fn parse_module(mut i: BytesReader) -> Result<Vec<Section>> {
+    let magic = take_until_magic_number(&mut i)?;
 
     assert_eq!(MAGIC_NUMBER, magic);
 
-    let (i, _version) = take_version_number(i)?;
+    let _version = take_version_number(&mut i)?;
 
-    let s = complete(many0(parse_section));
+    let mut sections = Vec::new();
+    while i.has_data_left().is_ok() {
+        let section = parse_section(&mut i)?;
+        sections.push(section);
+    }
 
-    let (i, k) = s(i)?;
-
-    Ok((i, k))
+    Ok(sections)
 }
 
-fn parse_section(i: &[u8]) -> IResult<&[u8], Section> {
-    let (i, n) = take(1u8)(i)?;
-    let (i, size) = take_leb_u32(i)?;
+fn parse_section(i: &mut BytesReader) -> Result<Section> {
+    let n = consume_byte!(i);
+    let size = take_leb_u32(i)?;
     let mut counter = Counter::default();
 
     debug!("SECTION {:?} {:?}", n, size);
 
-    let (i, m) = match n[0] {
+    let m = match n[0] {
         0 => parse_custom_section(i, size)?,
         1 => parse_type_section(i, size)?,
         2 => parse_import_section(i, size)?,
@@ -85,390 +127,398 @@ fn parse_section(i: &[u8]) -> IResult<&[u8], Section> {
         9 => parse_element_section(i, size, &mut counter)?,
         10 => parse_code_section(i, size, &mut counter)?,
         11 => parse_data_section(i, size, &mut counter)?,
-        _ => panic!("invalid section id"),
+        _ => anyhow::bail!("invalid section id"),
     };
 
-    Ok((i, m))
+    Ok(m)
 }
 
-fn take_until_magic_number(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn take_until_magic_number(reader: &mut BytesReader) -> Result<Vec<u8>> {
     debug!("take_until_magic_number");
-    take(4u8)(i)
+    Ok(consume!(reader, 4u32))
 }
 
-fn take_version_number(i: &[u8]) -> IResult<&[u8], &[u8]> {
+fn take_version_number(reader: &mut BytesReader) -> Result<Vec<u8>> {
     debug!("take_version_number");
-    take(4u8)(i)
+    Ok(consume!(reader, 4u32))
 }
 
-fn parse_custom_section(i: &[u8], size: u32) -> IResult<&[u8], Section> {
+fn parse_custom_section(i: &mut BytesReader, size: u32) -> Result<Section> {
     debug!("parse custom section");
-    let (k, name) = take_name(i)?;
+    let name = take_name(i)?;
 
-    let str_len = i.len() - k.len();
-
-    let (i, _) = take(size as usize - str_len)(k)?; //consume empty bytes
-
-    Ok((i, Section::Custom(CustomSection { name })))
+    Ok(Section::Custom(CustomSection { name }))
 }
 
-fn parse_type_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_type_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse type section");
 
-    let (i, times) = take_leb_u32(i)?;
-    let (i, vec) = count(take_function_signature, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut signatures = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Type(TypeSection { entries: vec })))
+    for _ in 0..times {
+        let sig = take_function_signature(i)?;
+        signatures.push(sig);
+    }
+
+    Ok(Section::Type(TypeSection {
+        entries: signatures,
+    }))
 }
 
-fn parse_import_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_import_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse import section");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, import) = count(take_import, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut imports = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Import(ImportSection { entries: import })))
+    for _ in 0..times {
+        let import = take_import(i)?;
+        imports.push(import);
+    }
+
+    Ok(Section::Import(ImportSection { entries: imports }))
 }
 
-fn parse_function_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_function_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse function section");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, functions) = count(take_leb_u32, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut functions = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Function(FunctionSection { types: functions })))
+    for _ in 0..times {
+        let function = take_leb_u32(i)?;
+        functions.push(function);
+    }
+
+    Ok(Section::Function(FunctionSection { types: functions }))
 }
 
-fn parse_table_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_table_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse table function");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, tables) = count(take_tabletype, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut tables = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Table(TableSection { entries: tables })))
+    for _ in 0..times {
+        let table = take_tabletype(i)?;
+        tables.push(table);
+    }
+
+    Ok(Section::Table(TableSection { entries: tables }))
 }
 
-fn parse_memory_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_memory_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse memory function");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, mem) = count(take_memtype, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut mems = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Memory(MemorySection { entries: mem })))
+    for _ in 0..times {
+        let mem = take_memtype(i)?;
+        mems.push(mem);
+    }
+
+    Ok(Section::Memory(MemorySection { entries: mems }))
 }
 
 fn parse_global_section<'a, 'b>(
-    i: &'a [u8],
+    i: &mut BytesReader,
     _size: u32,
     counter: &'b mut Counter,
-) -> IResult<&'a [u8], Section> {
+) -> Result<Section> {
     debug!("parse global function");
-    let (mut i, times) = take_leb_u32(i)?;
+    let times = take_leb_u32(i)?;
     let mut globals = Vec::with_capacity(times as usize);
 
     for _ in 0..times {
-        let k = take_global(i, counter)?;
-        i = k.0;
-        globals.push(k.1);
+        let global = take_global(i, counter)?;
+        globals.push(global);
     }
 
-    Ok((i, Section::Global(GlobalSection { globals })))
+    Ok(Section::Global(GlobalSection { globals }))
 }
 
-fn parse_export_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_export_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse export function");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, entries) = count(take_export, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut exports = Vec::with_capacity(times as usize);
 
-    Ok((i, Section::Export(ExportSection { entries })))
+    for _ in 0..times {
+        let export = take_export(i)?;
+        exports.push(export);
+    }
+
+    Ok(Section::Export(ExportSection { entries: exports }))
 }
 
-fn parse_start_section(i: &[u8], _size: u32) -> IResult<&[u8], Section> {
+fn parse_start_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse start function");
-    let (i, func_idx) = take_leb_u32(i)?;
+    let func_idx = take_leb_u32(i)?;
 
-    Ok((i, Section::Start(StartSection { index: func_idx })))
+    Ok(Section::Start(StartSection { index: func_idx }))
 }
 
-fn parse_element_section<'a, 'b>(
-    i: &'a [u8],
+fn parse_element_section<'b>(
+    i: &mut BytesReader,
     _size: u32,
     counter: &'b mut Counter,
-) -> IResult<&'a [u8], Section> {
+) -> Result<Section> {
     debug!("parse_element_section");
-    let (mut i, times) = take_leb_u32(i)?;
-    //let (i, elements) = count(take_elem, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
     let mut elements = Vec::with_capacity(times as usize);
 
     for _ in 0..times {
-        let k = take_elem(i, counter)?;
-        i = k.0;
-        elements.push(k.1);
+        let elem = take_elem(i, counter)?;
+        elements.push(elem);
     }
 
-    Ok((i, Section::Element(ElementSection { entries: elements })))
+    Ok(Section::Element(ElementSection { entries: elements }))
 }
 
-fn parse_data_section<'a, 'b>(
-    i: &'a [u8],
+fn parse_data_section<'b>(
+    i: &mut BytesReader,
     _size: u32,
     counter: &'b mut Counter,
-) -> IResult<&'a [u8], Section> {
+) -> Result<Section> {
     debug!("parse_data_section");
-    let (mut i, times) = take_leb_u32(i)?;
-    //let (i, k) = count(take_data, times as usize)(i)?;
-
+    let times = take_leb_u32(i)?;
     let mut entries = Vec::with_capacity(times as usize);
+
     for _ in 0..times {
-        let k = take_data(i, counter)?;
-        i = k.0;
-        entries.push(k.1);
+        let data = take_data(i, counter)?;
+        entries.push(data);
     }
 
-    Ok((i, Section::Data(DataSection { entries })))
+    Ok(Section::Data(DataSection { entries }))
 }
 
 fn parse_code_section<'a, 'b>(
-    i: &'a [u8],
+    i: &mut BytesReader,
     _size: u32,
     counter: &'b mut Counter,
-) -> IResult<&'a [u8], Section> {
+) -> Result<Section> {
     debug!("parse_code_section");
 
-    let (mut i, times) = take_leb_u32(i)?;
-    debug!("times {}", times);
-    //let (i, codes) = count(take_code, times as usize)(i)?;
-
+    let times = take_leb_u32(i)?;
     let mut codes = Vec::with_capacity(times as usize);
+
     for _ in 0..times {
-        let k = take_code(i, counter)?;
-        i = k.0;
-        codes.push(k.1);
+        let code = take_code(i, counter)?;
+        codes.push(code);
     }
 
-    Ok((i, Section::Code(CodeSection { entries: codes })))
+    Ok(Section::Code(CodeSection { entries: codes }))
 }
 
-fn take_code<'a, 'b>(i: &'a [u8], counter: &'b mut Counter) -> IResult<&'a [u8], FunctionBody> {
+fn take_code<'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<FunctionBody> {
     debug!("parse_code");
 
-    let (i, _size) = take_leb_u32(i)?;
-    let (i, k) = take_func(i, counter)?;
+    let _size = take_leb_u32(i)?;
+    let k = take_func(i, counter)?;
 
-    Ok((i, k))
+    Ok(k)
 }
 
-fn take_func<'a, 'b>(i: &'a [u8], counter: &'b mut Counter) -> IResult<&'a [u8], FunctionBody> {
+fn take_func<'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<FunctionBody> {
     debug!("take_func");
 
-    let (i, times) = take_leb_u32(i)?;
-    debug!("times {}", times);
-    let (i, locals) = count(take_local, times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let mut locals = Vec::with_capacity(times as usize);
+
+    for _ in 0..times {
+        let local = take_local(i)?;
+        locals.push(local);
+    }
 
     debug!("locals {:?}", locals);
 
-    let (i, code) = take_expr(i, counter)?;
+    let code = take_expr(i, counter)?;
 
-    Ok((
-        i,
-        FunctionBody {
-            locals,
-            code: InstructionWrapper::wrap_instructions(counter, code),
-        },
-    ))
+    Ok(FunctionBody {
+        locals,
+        code: InstructionWrapper::wrap_instructions(counter, code),
+    })
 }
 
-fn take_local(i: &[u8]) -> IResult<&[u8], LocalEntry> {
+fn take_local(i: &mut BytesReader) -> Result<LocalEntry> {
     debug!("take_local");
 
-    let (i, n) = take_leb_u32(i)?;
-    debug!("local n {:?}", n);
-    //debug!("local i {:?}", i);
-    let (i, t) = take_valtype(i)?;
+    let n = take_leb_u32(i)?;
+    let t = take_valtype(i)?;
 
-    Ok((i, LocalEntry { count: n, ty: t }))
+    Ok((LocalEntry { count: n, ty: t }))
 }
 
-fn take_data<'a, 'b>(i: &'a [u8], counter: &'b mut Counter) -> IResult<&'a [u8], DataSegment> {
+fn take_data<'a, 'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<DataSegment> {
     debug!("take_data");
 
-    let (i, mem_idx) = take_leb_u32(i)?;
-    let (i, e) = take_expr(i, counter)?;
+    let mem_idx = take_leb_u32(i)?;
+    let e = take_expr(i, counter)?;
 
-    let (i, times) = take_leb_u32(i)?;
-    let (i, b) = count(take(1u8), times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let b = consume!(i, times as usize);
 
-    Ok((
-        i,
-        DataSegment {
-            data: mem_idx,
-            offset: InstructionWrapper::wrap_instructions(counter, e),
-            init: b.into_iter().map(|w| w[0]).collect(),
-        },
-    ))
+    Ok(DataSegment {
+        data: mem_idx,
+        offset: InstructionWrapper::wrap_instructions(counter, e),
+        init: b,
+    })
 }
 
-fn take_elem<'a, 'b>(i: &'a [u8], counter: &'b mut Counter) -> IResult<&'a [u8], ElementSegment> {
+fn take_elem<'a, 'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<ElementSegment> {
     debug!("take_elem");
 
-    let (i, table_idx) = take_leb_u32(i)?;
-    let (i, e) = take_expr(i, counter)?;
-    let (i, times) = take_leb_u32(i)?;
-    let (i, y_vec) = count(take_leb_u32, times as usize)(i)?;
+    let table_idx = take_leb_u32(i)?;
+    let e = take_expr(i, counter)?;
+    let times = take_leb_u32(i)?;
+    let mut y_vec = Vec::with_capacity(times as usize);
 
-    Ok((
-        i,
-        ElementSegment {
-            table: table_idx,
-            offset: InstructionWrapper::wrap_instructions(counter, e),
-            init: y_vec,
-        },
-    ))
+    for _ in 0..times {
+        let num = take_leb_u32(i)?;
+        y_vec.push(num);
+    }
+
+    Ok(ElementSegment {
+        table: table_idx,
+        offset: InstructionWrapper::wrap_instructions(counter, e),
+        init: y_vec,
+    })
 }
 
-fn take_export(i: &[u8]) -> IResult<&[u8], ExportEntry> {
+fn take_export(i: &mut BytesReader) -> Result<ExportEntry> {
     debug!("take_export");
 
-    let (i, name) = take_name(i)?;
-    let (i, kind) = take_desc(i)?;
+    let name = take_name(i)?;
+    let kind = take_desc(i)?;
 
-    Ok((i, ExportEntry { name, kind }))
+    Ok(ExportEntry { name, kind })
 }
 
-fn take_global<'a, 'b>(i: &'a [u8], counter: &'b mut Counter) -> IResult<&'a [u8], GlobalVariable> {
-    let (i, ty) = take_globaltype(i)?;
-    let (i, e) = take_expr(i, counter)?;
+fn take_global<'a, 'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<GlobalVariable> {
+    let ty = take_globaltype(i)?;
+    let e = take_expr(i, counter)?;
 
-    Ok((
-        i,
-        GlobalVariable {
-            ty,
-            init: InstructionWrapper::wrap_instructions(counter, e),
-        },
-    ))
+    Ok(GlobalVariable {
+        ty,
+        init: InstructionWrapper::wrap_instructions(counter, e),
+    })
 }
 
-pub(crate) fn take_expr<'a, 'b>(
-    mut i: &'a [u8],
+pub(crate) fn take_expr<'b>(
+    mut i: &mut BytesReader,
     counter: &'b mut Counter,
-) -> IResult<&'a [u8], Vec<Instruction>> {
+) -> Result<Vec<Instruction>> {
     debug!("take expr");
 
     let mut instructions = Vec::new();
 
     loop {
-        let (_, k) = take(1u8)(i)?; //0x0B
+        let k = consume_byte!(i);
 
         if k == END_INSTR {
             break;
         }
 
-        let (w, ii) = instructions::parse_instr(i, counter)?;
-        instructions.push(ii);
-        i = w;
+        let instruction = instructions::parse_instr(i, counter)?;
+        instructions.push(instruction);
     }
 
-    let (i, e) = take(1u8)(i)?; //0x0B
+    let e = consume_byte!(i); //0x0B
     assert_eq!(e, END_INSTR);
 
-    Ok((i, instructions))
+    Ok(instructions)
 }
 
-fn take_import(i: &[u8]) -> IResult<&[u8], ImportEntry> {
+fn take_import(i: &mut BytesReader) -> Result<ImportEntry> {
     debug!("take_import");
 
-    let (i, module_name) = take_name(i)?;
-    let (i, name) = take_name(i)?;
-    let (i, desc) = take_import_desc(i)?;
+    let module_name = take_name(i)?;
+    let name = take_name(i)?;
+    let desc = take_import_desc(i)?;
 
-    Ok((
-        i,
-        ImportEntry {
-            module_name,
-            name,
-            desc,
-        },
-    ))
+    Ok(ImportEntry {
+        module_name,
+        name,
+        desc,
+    })
 }
 
-fn take_import_desc(i: &[u8]) -> IResult<&[u8], ImportDesc> {
+fn take_import_desc(i: &mut BytesReader) -> Result<ImportDesc> {
     debug!("take_desc");
 
-    let (i, b) = take(1u8)(i)?;
+    let b = consume_byte!(i);
 
-    let (i, desc) = match b[0] {
+    let desc = match b[0] {
         0x00 => {
-            let (i, t) = take_leb_u32(&i)?;
-            (i, ImportDesc::Function { ty: t })
+            let t = take_leb_u32(i)?;
+            (ImportDesc::Function { ty: t })
         }
         0x01 => {
-            let (i, t) = take_tabletype(&i)?;
-            (i, ImportDesc::Table { ty: t })
+            let t = take_tabletype(i)?;
+            (ImportDesc::Table { ty: t })
         }
         0x02 => {
-            let (i, t) = take_memtype(&i)?;
-            (i, ImportDesc::Memory { ty: t })
+            let t = take_memtype(i)?;
+            (ImportDesc::Memory { ty: t })
         }
         0x03 => {
-            let (i, t) = take_globaltype(&i)?;
-            (i, ImportDesc::Global { ty: t })
+            let (t) = take_globaltype(i)?;
+            (ImportDesc::Global { ty: t })
         }
-        _ => panic!("desc failed"),
+        _ => anyhow::bail!("desc failed"),
     };
 
-    Ok((i, desc))
+    Ok(desc)
 }
 
-fn take_desc(i: &[u8]) -> IResult<&[u8], ExternalKindType> {
+fn take_desc(i: &mut BytesReader) -> Result<ExternalKindType> {
     debug!("take_desc");
 
-    let (i, b) = take(1u8)(i)?;
+    let b = consume!(i, 1u8);
 
-    let (i, desc) = match b[0] {
+    let (desc) = match b[0] {
         0x00 => {
-            let (i, t) = take_leb_u32(&i)?;
-            (i, ExternalKindType::Function { ty: t })
+            let t = take_leb_u32(i)?;
+            (ExternalKindType::Function { ty: t })
         }
         0x01 => {
-            let (i, t) = take_leb_u32(&i)?;
-            (i, ExternalKindType::Table { ty: t })
+            let t = take_leb_u32(i)?;
+            (ExternalKindType::Table { ty: t })
         }
         0x02 => {
-            let (i, t) = take_leb_u32(&i)?;
-            (i, ExternalKindType::Memory { ty: t })
+            let t = take_leb_u32(i)?;
+            (ExternalKindType::Memory { ty: t })
         }
         0x03 => {
-            let (i, t) = take_leb_u32(&i)?;
-            (i, ExternalKindType::Global { ty: t })
+            let t = take_leb_u32(i)?;
+            (ExternalKindType::Global { ty: t })
         }
-        _ => panic!("desc failed"),
+        _ => anyhow::bail!("desc failed"),
     };
 
-    Ok((i, desc))
+    Ok(desc)
 }
 
-fn take_memtype(i: &[u8]) -> IResult<&[u8], MemoryType> {
+fn take_memtype(i: &mut BytesReader) -> Result<MemoryType> {
     debug!("take_memtype");
-    let (i, l) = take_limits(i)?;
+    let l = take_limits(i)?;
 
-    Ok((i, MemoryType { limits: l }))
+    Ok(MemoryType { limits: l })
 }
 
-fn take_tabletype(i: &[u8]) -> IResult<&[u8], TableType> {
+fn take_tabletype(i: &mut BytesReader) -> Result<TableType> {
     debug!("take_tabletype");
-    let (i, element_type) = take(1u8)(i)?;
+    let element_type = consume_byte!(i);
     assert_eq!(0x70, element_type[0]);
-    let (i, limits) = take_limits(i)?;
+    let limits = take_limits(i)?;
 
-    Ok((
-        i,
-        TableType {
-            element_type: 0x70,
-            limits,
-        },
-    ))
+    Ok(TableType {
+        element_type: 0x70,
+        limits,
+    })
 }
 
-fn take_globaltype(i: &[u8]) -> IResult<&[u8], GlobalType> {
+fn take_globaltype(i: &mut BytesReader) -> Result<GlobalType> {
     debug!("take_globaltype");
-    let (i, val) = take_valtype(i)?;
-    let (i, b) = take_byte(i, 1)?;
+    let val = take_valtype(i)?;
+    let b = consume_byte!(i);
 
     let mu = match b[0] {
         0x00 => Mu::Const,
@@ -476,181 +526,128 @@ fn take_globaltype(i: &[u8]) -> IResult<&[u8], GlobalType> {
         _ => panic!("wrong mu"),
     };
 
-    Ok((
-        i,
-        GlobalType {
-            value_type: val,
-            mu,
-        },
-    ))
-}
-
-fn take_limits(i: &[u8]) -> IResult<&[u8], Limits> {
-    debug!("take_limits");
-    let (i, n) = take(1u8)(i)?;
-
-    Ok(match n[0] {
-        0x00 => {
-            let (i, n) = take_leb_u32(i)?;
-
-            (i, Limits::Zero(n))
-        }
-        0x01 => {
-            let (i, n) = take_leb_u32(i)?;
-            let (i, m) = take_leb_u32(i)?;
-
-            (i, Limits::One(n, m))
-        }
-        _ => panic!("Limit has wrong tag"),
+    Ok(GlobalType {
+        value_type: val,
+        mu,
     })
 }
 
-fn take_function_signature(i: &[u8]) -> IResult<&[u8], FunctionSignature> {
+fn take_limits(i: &mut BytesReader) -> Result<Limits> {
+    debug!("take_limits");
+    let n = consume_byte!(i);
+
+    Ok(match n[0] {
+        0x00 => {
+            let n = take_leb_u32(i)?;
+
+            (Limits::Zero(n))
+        }
+        0x01 => {
+            let n = take_leb_u32(i)?;
+            let m = take_leb_u32(i)?;
+
+            (Limits::One(n, m))
+        }
+        _ => anyhow::bail!("Limit has wrong tag"),
+    })
+}
+
+fn take_function_signature(i: &mut BytesReader) -> Result<FunctionSignature> {
     debug!("take_function_signature");
 
-    let (i, offset) = take(1u8)(i)?; //0x60
+    let offset = consume_byte!(i); //0x60
 
     assert_eq!(offset[0], 0x60);
 
-    let (i, times) = take_leb_u32(i)?;
-    let (i, t1) = count(take(1u8), times as usize)(i)?;
-    let (i, times) = take_leb_u32(i)?;
-    let (i, t2) = count(take(1u8), times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let t1 = consume!(i, times);
+    let times = take_leb_u32(i)?;
+    let t2 = consume!(i, times);
 
-    let param_types: Vec<_> = t1.into_iter().map(|w| w[0].into()).collect();
-    let return_types: Vec<_> = t2.into_iter().map(|w| w[0].into()).collect();
+    let param_types: Vec<_> = t1.into_iter().map(|w| w.into()).collect();
+    let return_types: Vec<_> = t2.into_iter().map(|w| w.into()).collect();
 
-    Ok((
-        i,
-        FunctionSignature {
-            param_types,
-            return_types,
-        },
-    ))
+    Ok(FunctionSignature {
+        param_types,
+        return_types,
+    })
 }
 
-fn take_valtype(i: &[u8]) -> IResult<&[u8], ValueType> {
+fn take_valtype(i: &mut BytesReader) -> Result<ValueType> {
     debug!("take_valtype");
-    let (i, n) = take(1u8)(i)?;
+    let n = consume!(i, 1u8);
 
-    Ok((i, n[0].into()))
+    Ok(n[0].into())
 }
 
-fn take_blocktype(i: &[u8]) -> IResult<&[u8], BlockType> {
+fn take_blocktype(i: &mut BytesReader) -> Result<BlockType> {
     debug!("take_blocktype");
-    let (u, n) = take(1u8)(i)?;
-    debug!("n {:?}", n);
+    let n = consume!(i, 1u8);
 
-    let (i, bty) = match n[0] {
-        0x40 => (u, BlockType::Empty),
-        0x7F | 0x7E | 0x7D | 0x7C => (u, BlockType::ValueType(n[0].into())),
+    let bty = match n[0] {
+        0x40 => BlockType::Empty,
+        0x7F | 0x7E | 0x7D | 0x7C => BlockType::ValueType(n[0].into()),
         _ => {
             // This must be signed 33 bit
             // Weird, Page 96 spec
-            let (i, k) = take_leb_i33(i)?;
+            let k = take_leb_i33(i)?;
 
-            (i, BlockType::FuncTy(k as i32))
+            (BlockType::FuncTy(k as i32))
         }
     };
 
-    Ok((i, bty))
+    Ok(bty)
 }
 
-fn take_byte(i: &[u8], len: u32) -> IResult<&[u8], &[u8]> {
-    debug!("take_byte");
-    take(len as usize)(i)
-}
-
-pub(crate) fn take_f32(i: &[u8]) -> IResult<&[u8], f32> {
+pub(crate) fn take_f32(i: &mut BytesReader) -> Result<f32> {
     debug!("take_f32");
-    let (i, bytes) = take(4u8)(i)?;
+    let bytes = consume!(i, 4u8);
 
-    Ok((i, LittleEndian::read_f32(bytes)))
+    Ok(LittleEndian::read_f32(&bytes))
 }
 
-pub(crate) fn take_f64(i: &[u8]) -> IResult<&[u8], f64> {
+pub(crate) fn take_f64(i: &mut BytesReader) -> Result<f64> {
     debug!("take_f64");
-    let (i, bytes) = take(8u8)(i)?;
+    let bytes = consume!(i, 8u8);
 
-    Ok((i, LittleEndian::read_f64(bytes)))
+    Ok(LittleEndian::read_f64(&bytes))
 }
 
-fn take_name(i: &[u8]) -> IResult<&[u8], String> {
+fn take_name(i: &mut BytesReader) -> Result<String> {
     debug!("take_name");
-    let (i, times) = take_leb_u32(i)?;
-    let (i, vec) = count(take(1u8), times as usize)(i)?;
+    let times = take_leb_u32(i)?;
+    let bytes = consume!(i, times);
 
-    let vec2: Vec<_> = vec.into_iter().map(|w| w[0]).collect();
-
-    Ok((i, String::from_utf8(vec2).unwrap()))
+    Ok(String::from_utf8(bytes).unwrap())
 }
 
-pub(crate) fn take_leb_u32(i: &[u8]) -> IResult<&[u8], u32> {
+macro_rules! take_leb {
+    ($function:ident, $reader:expr, $buffer:expr) => {{
+        let bytes = consume_up_to!($reader, $buffer);
+        let leb = $function(&bytes[..]);
+        let _ = consume!($reader, leb.1); //skip the bytes, which contain leb
+        Ok(leb.0)
+    }};
+}
+
+pub(crate) fn take_leb_u32(i: &mut BytesReader) -> Result<u32> {
     debug!("take_leb_u32");
-    if i.len() >= 5 {
-        let (_, bytes) = take(5u8)(i)?;
-        let leb = read_u32_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    } else {
-        let (_, bytes) = take(i.len())(i)?;
-        let leb = read_u32_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    }
+    take_leb!(read_u32_leb128, i, 5u8)
 }
 
-pub(crate) fn take_leb_i32(i: &[u8]) -> IResult<&[u8], i32> {
+pub(crate) fn take_leb_i32(i: &mut BytesReader) -> Result<i32> {
     debug!("take_leb_i32");
-    if i.len() >= 5 {
-        let (_, bytes) = take(5u8)(i)?;
-        let leb = read_i32_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    } else {
-        let (_, bytes) = take(i.len())(i)?;
-        let leb = read_i32_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    }
+    take_leb!(read_i32_leb128, i, 5u8)
 }
 
-pub(crate) fn take_leb_i64(i: &[u8]) -> IResult<&[u8], i64> {
+pub(crate) fn take_leb_i64(i: &mut BytesReader) -> Result<i64> {
     debug!("take_leb_i64");
-    if i.len() >= 10 {
-        let (_, bytes) = take(10u8)(i)?;
-        let leb = read_i64_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    } else {
-        let (_, bytes) = take(i.len())(i)?;
-        let leb = read_i64_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    }
+    take_leb!(read_i64_leb128, i, 10u8)
 }
 
-pub(crate) fn take_leb_i33(i: &[u8]) -> IResult<&[u8], i64> {
+pub(crate) fn take_leb_i33(i: &mut BytesReader) -> Result<i64> {
     debug!("take_leb_i33");
-    if i.len() >= 6 {
-        let (_, bytes) = take(6u8)(i)?;
-        let leb = read_i33_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    } else {
-        let (_, bytes) = take(i.len())(i)?;
-        let leb = read_i33_leb128(bytes);
-        let (i, _) = take(leb.1)(i)?; //skip the bytes, which contain leb
-
-        Ok((i, leb.0))
-    }
+    take_leb!(read_i33_leb128, i, 6u8)
 }
 
 #[cfg(test)]
@@ -661,108 +658,105 @@ mod tests {
     macro_rules! test_file {
         ($fs_name:expr) => {
             let file = read_wasm!(&format!("test_files/{}", $fs_name));
-            let ast = parse(file).unwrap();
+            let ast = parse(&file).unwrap();
             assert_snapshot!($fs_name, format!("{:#?}", ast));
+        };
+    }
+
+    macro_rules! test_template {
+        ($fname:ident, $input:expr, $expected:expr) => {
+            let bytes = [0x7f, 0, 0, 0];
+            let n = take_leb_i32(&mut BufReader::new(&bytes)).unwrap();
+            assert_eq!(n as i128, $expected);
         };
     }
 
     #[test]
     fn test_take_leb_i32() {
         let bytes = [0x7f, 0, 0, 0];
+        let expected = -1;
 
-        let (_, n) = take_leb_i32(&bytes).unwrap();
-
-        assert_eq!(n, -1);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i33() {
         let bytes = [0x7f, 0, 0, 0];
+        let expected = -1;
 
-        let (_, n) = take_leb_i33(&bytes).unwrap();
-
-        assert_eq!(n, -1);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64() {
         let bytes = [0x7f, 0, 0, 0];
+        let expected = -1;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, -1);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64_2() {
         let bytes = [0x3c, 0, 0, 0];
+        let expected = 0x3c;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, 0x3c);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64_3() {
         let bytes = [0x80, 0x7f];
+        let expected = -120;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, -128);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_u32_n135() {
         let bytes = [135u8, 0x01];
+        let expected = 135;
 
-        let (_, n) = take_leb_u32(&bytes).unwrap();
-
-        assert_eq!(n, 135);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i32_n8192() {
         let bytes = [0x80, 0xc0, 0x00];
+        let expected = 8192;
 
-        let (_, n) = take_leb_i32(&bytes).unwrap();
-
-        assert_eq!(n, 8192);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i32_neg_n8192() {
         let bytes = [0x80, 0x40];
+        let expected = -8192;
 
-        let (_, n) = take_leb_i32(&bytes).unwrap();
-
-        assert_eq!(n, -8192);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64_n8192() {
         let bytes = [0x80, 0xc0, 0x00];
+        let expected = 8192;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, 8192);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64_neg_n8192() {
         let bytes = [0x80, 0x40];
+        let expected = -8192;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, -8192);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]
     fn test_take_leb_i64_min() {
         let bytes = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f];
+        let expected: i128 = -9223372036854775808;
 
-        let (_, n) = take_leb_i64(&bytes).unwrap();
-
-        assert_eq!(n, -9223372036854775808);
+        test_template!(take_leb_i32, bytes, expected);
     }
 
     #[test]

@@ -802,7 +802,7 @@ mod tests {
     macro_rules! test_file {
         ($fs_name:expr) => {
             let file = read_wasm!(&format!("../wasm_parser/test_files/{}", $fs_name));
-            let ast = parse(file).unwrap();
+            let ast = parse(file.as_slice()).unwrap();
             assert!(validate(&ast).is_ok());
         };
     }

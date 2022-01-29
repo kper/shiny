@@ -1,16 +1,16 @@
 #[macro_use]
 extern crate log;
 extern crate env_logger;
-extern crate funky;
 extern crate regex;
+extern crate shiny;
 
 use docopt::Docopt;
-use funky::cli::parse_args;
-use funky::debugger::RelativeProgramCounter;
-use funky::engine::import_resolver::Imports;
-use funky::engine::module::ModuleInstance;
-use funky::engine::Engine;
 use serde::Deserialize;
+use shiny::cli::parse_args;
+use shiny::debugger::RelativeProgramCounter;
+use shiny::engine::import_resolver::Imports;
+use shiny::engine::module::ModuleInstance;
+use shiny::engine::Engine;
 use validation::validate;
 use wasm_parser::{parse, read_wasm};
 
@@ -50,7 +50,7 @@ fn main() {
 
     info!("Parsing wasm file");
 
-    let module = parse(reader).unwrap();
+    let module = parse(reader.as_slice()).unwrap();
 
     if args.flag_stage0 {
         println!("{:#?}", module);

@@ -34,8 +34,7 @@ fn main() {
         .unwrap_or_else(|e| e.exit());
 
     let reader = read_wasm!(args.arg_input);
-
-    let module = parse(reader).unwrap();
+    let module = parse(reader.as_slice()).unwrap();
 
     if !args.flag_no_output {
         if args.flag_json {

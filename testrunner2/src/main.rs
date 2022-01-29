@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 #[macro_use]
-extern crate funky;
+extern crate shiny;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -12,14 +12,14 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use funky::debugger::RelativeProgramCounter;
-use funky::engine::import_resolver::{Import, Imports};
-use funky::engine::module::ModuleInstance;
-use funky::engine::store::GlobalInstance;
-use funky::engine::Engine;
-use funky::engine::TableInstance;
-use funky::value::Value;
-use funky::{parse, read_wasm, validate};
+use shiny::debugger::RelativeProgramCounter;
+use shiny::engine::import_resolver::{Import, Imports};
+use shiny::engine::module::ModuleInstance;
+use shiny::engine::store::GlobalInstance;
+use shiny::engine::Engine;
+use shiny::engine::TableInstance;
+use shiny::value::Value;
+use shiny::{parse, read_wasm, validate};
 
 use crate::core::*;
 use crate::json::*;

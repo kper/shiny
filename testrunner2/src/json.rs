@@ -1,6 +1,6 @@
 use crate::core::*;
-use funky::value::Value;
 use serde::Deserialize;
+use shiny::value::Value;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(tag = "type")]

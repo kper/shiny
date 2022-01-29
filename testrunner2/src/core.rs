@@ -1,16 +1,16 @@
 use crate::json::{ActionType, AssertReturn, Command, FailedCommand};
 use anyhow::{Context, Result};
-use funky::debugger::RelativeProgramCounter;
-use funky::engine::import_resolver::{Import, Imports};
-use funky::engine::module::ModuleInstance;
-use funky::engine::stack::StackContent;
-use funky::engine::store::GlobalInstance;
-use funky::engine::Engine;
-use funky::engine::TableInstance;
-use funky::value::Value;
-use funky::{parse, validate};
 use log::debug;
 use serde::Deserialize;
+use shiny::debugger::RelativeProgramCounter;
+use shiny::engine::import_resolver::{Import, Imports};
+use shiny::engine::module::ModuleInstance;
+use shiny::engine::stack::StackContent;
+use shiny::engine::store::GlobalInstance;
+use shiny::engine::Engine;
+use shiny::engine::TableInstance;
+use shiny::value::Value;
+use shiny::{parse, validate};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::{
@@ -99,7 +99,7 @@ impl TestFile {
 
     pub fn setup(&mut self, name: &str) -> Result<Engine> {
         let reader = self.read_wasm(&format!("testsuite/{}", name))?;
-        let module = parse(reader).context(format!("Parsing failed for {}", name))?;
+        let module = parse(reader.as_slice()).context(format!("Parsing failed for {}", name))?;
         let validation = validate(&module); //TODO check validation
         let (mi, functions) = ModuleInstance::new(&module);
 
@@ -240,22 +240,22 @@ impl TestFile {
         imports.push(Import::Global(
             module.clone(),
             "global_i32".to_string(),
-            GlobalInstance::immutable(funky::value::Value::I32(666)),
+            GlobalInstance::immutable(Value::I32(666)),
         ));
         imports.push(Import::Global(
             module.clone(),
             "global_i64".to_string(),
-            GlobalInstance::immutable(funky::value::Value::I64(666)),
+            GlobalInstance::immutable(Value::I64(666)),
         ));
         imports.push(Import::Global(
             module.clone(),
             "global_f32".to_string(),
-            GlobalInstance::immutable(funky::value::Value::F32(666.6)),
+            GlobalInstance::immutable(Value::F32(666.6)),
         ));
         imports.push(Import::Global(
             module.clone(),
             "global_f64".to_string(),
-            GlobalInstance::immutable(funky::value::Value::F64(666.6)),
+            GlobalInstance::immutable(Value::F64(666.6)),
         ));
         imports.push(Import::Table(
             module,

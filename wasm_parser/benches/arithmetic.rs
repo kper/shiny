@@ -9,14 +9,13 @@ macro_rules! test_file {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
+    let arithmetic_fs = test_file!("arithmetic.wasm");
+    let gcd_fs = test_file!("gcd.wasm");
+
     c.bench_function("arithmetic", |b| {
-        let arithmetic_fs = test_file!("arithmetic.wasm");
-        b.iter(|| parse(arithmetic_fs.clone()).unwrap())
+        b.iter(|| parse(arithmetic_fs.as_slice()).unwrap())
     });
-    c.bench_function("gcd", |b| {
-        let gcd_fs = test_file!("gcd.wasm");
-        b.iter(|| parse(gcd_fs.clone()).unwrap())
-    });
+    c.bench_function("gcd", |b| b.iter(|| parse(gcd_fs.as_slice()).unwrap()));
 }
 
 criterion_group!(benches, criterion_benchmark);

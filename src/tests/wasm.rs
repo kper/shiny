@@ -13,7 +13,7 @@ use wasm_parser::{parse, read_wasm, Module};
 macro_rules! test_file_engine {
     ($fs_name:expr) => {
         let file = read_wasm!(&format!("tests/{}", $fs_name));
-        let module = parse(file).expect("Parsing failed");
+        let module = parse(file.as_slice()).expect("Parsing failed");
         assert!(validate(&module).is_ok());
 
         let imports = Vec::new();
@@ -35,7 +35,7 @@ macro_rules! test_file_engine {
 macro_rules! test_run_engine {
     ($fs_name:expr, $num_f:expr, $init:expr) => {{
         let file = read_wasm!(&format!("tests/{}", $fs_name));
-        let module = parse(file).expect("Parsing failed");
+        let module = parse(file.as_slice()).expect("Parsing failed");
         assert!(validate(&module).is_ok());
 
         let imports = Vec::new();
@@ -68,7 +68,7 @@ macro_rules! test_run_engine {
 macro_rules! test_get_exported_global {
     ($fs_name:expr, $num_f:expr) => {{
         let file = read_wasm!(&format!("tests/{}", $fs_name));
-        let module = parse(file).expect("Parsing failed");
+        let module = parse(file.as_slice()).expect("Parsing failed");
         assert!(validate(&module).is_ok());
 
         let imports = Vec::new();
