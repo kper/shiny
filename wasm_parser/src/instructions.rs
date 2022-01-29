@@ -1,12 +1,10 @@
 use anyhow::Result;
 use log::debug;
-use nom::bytes::complete::take;
-use nom::multi::count;
 
 use crate::core::*;
 use crate::{
-    consume, consume_byte, take_blocktype, take_f32, take_f64, take_leb_i32, take_leb_i64,
-    take_leb_u32, BytesReader,
+    consume_byte, take_blocktype, take_f32, take_f64, take_leb_i32, take_leb_i64, take_leb_u32,
+    BytesReader,
 };
 
 const END_INSTR: &[u8] = &[0x0B];
@@ -38,7 +36,7 @@ pub(crate) fn parse_instr<'b>(
         0x1B => (Instruction::OP_SELECT),
         // Var
         0x20 => {
-            let (idx) = crate::take_leb_u32(i)?;
+            let idx = crate::take_leb_u32(i)?;
             let block = Instruction::OP_LOCAL_GET(idx);
             block
         }
@@ -347,7 +345,7 @@ pub(crate) fn parse_instr<'b>(
         0xc4 => (Instruction::OP_I64_EXTEND32_S),
 
         0xfc => {
-            let (m) = consume_byte!(i);
+            let m = consume_byte!(i);
             match m {
                 [0x00] => Instruction::OP_I32_TRUNC_SAT_F32_S,
                 [0x01] => Instruction::OP_I32_TRUNC_SAT_F32_U,
@@ -368,7 +366,7 @@ pub(crate) fn parse_instr<'b>(
 }
 
 fn take_block<'a, 'b>(i: &mut BytesReader, counter: &'a mut Counter) -> Result<Instruction> {
-    let (block_ty) = take_blocktype(i)?;
+    let block_ty = take_blocktype(i)?;
 
     let mut instructions = Vec::new();
 
@@ -490,7 +488,7 @@ fn take_br_table(i: &mut BytesReader) -> Result<Instruction> {
         ids.push(id);
     }
 
-    let (l_n) = crate::take_leb_u32(i)?;
+    let l_n = crate::take_leb_u32(i)?;
 
     let block = Instruction::OP_BR_TABLE(ids, l_n);
 
@@ -548,7 +546,7 @@ mod test {
         let instructions = take_block(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -579,7 +577,7 @@ mod test {
         let instructions = take_block(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -611,7 +609,7 @@ mod test {
         let instructions = take_block(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -645,7 +643,7 @@ mod test {
         let instructions = take_block(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -688,7 +686,7 @@ mod test {
         let instructions = take_block(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -728,7 +726,7 @@ mod test {
         let instructions = take_conditional(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -761,7 +759,7 @@ mod test {
 
         //debug!("{:?}", instructions);
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -791,7 +789,7 @@ mod test {
         let instructions = take_loop(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();
@@ -825,7 +823,7 @@ mod test {
         let instructions = take_loop(&mut reader, &mut counter).unwrap();
 
         let mut buff = [0u8; 1];
-        reader.read_exact(&mut buff);
+        let _ = reader.read_exact(&mut buff);
         assert_ne!(buff, [11]);
 
         let mut counter = Counter::default();

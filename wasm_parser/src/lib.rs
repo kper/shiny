@@ -14,10 +14,6 @@ use self::leb128::*;
 
 use anyhow::Result;
 use byteorder::{ByteOrder, LittleEndian};
-use nom::bytes::complete::take;
-use nom::combinator::complete;
-use nom::multi::{count, many0};
-use nom::IResult;
 use serde::{Deserialize, Serialize};
 
 use std::io::prelude::*;
@@ -50,8 +46,9 @@ macro_rules! read_wasm {
 macro_rules! consume {
     ($reader:expr, $num:expr) => {{
         use std::io::prelude::*;
-        let mut tmp: Vec<u8> = Vec::with_capacity($num as usize);
-        let _ = $reader.read_exact(&mut tmp).unwrap();
+        let mut tmp = vec![0u8; $num as usize];
+        debug!("Consuming {} bytes", $num);
+        $reader.read_exact(&mut tmp).unwrap();
 
         tmp
     }};
@@ -62,7 +59,7 @@ macro_rules! consume_byte {
     ($reader:expr) => {{
         use std::io::prelude::*;
         let mut tmp: [u8; 1] = [0u8; 1];
-        let _ = $reader.read_exact(&mut tmp).unwrap();
+        $reader.read_exact(&mut tmp).unwrap();
 
         tmp
     }};
@@ -72,10 +69,19 @@ macro_rules! consume_byte {
 macro_rules! consume_up_to {
     ($reader:expr, $num:expr) => {{
         use std::io::prelude::*;
-        let mut tmp = [0u8; $num as usize];
-        let _ = $reader.read(&mut tmp).unwrap();
+        let mut tmp = vec![0u8; $num as usize];
+        let _ = $reader.read(&mut tmp).expect("Reading bytes failed");
 
         tmp
+    }};
+}
+
+#[macro_export]
+macro_rules! read {
+    ($reader:expr, $num:expr) => {{
+        use std::io::prelude::*;
+        debug!("Reading {} bytes", $num);
+        &$reader.fill_buf().expect("Cannot read from the buffer")[0..($num as usize)]
     }};
 }
 
@@ -84,7 +90,7 @@ type BytesReader<'a> = BufReader<Bytes<'a>>;
 
 /// Parses a vector of bytes into a webassembly module.
 pub fn parse(content: Bytes) -> Result<Module> {
-    let mut buf_reader = BufReader::new(content);
+    let buf_reader = BufReader::new(content);
 
     let sections = parse_module(buf_reader).expect("Parsing failed");
 
@@ -92,7 +98,7 @@ pub fn parse(content: Bytes) -> Result<Module> {
 }
 
 fn parse_module(mut i: BytesReader) -> Result<Vec<Section>> {
-    let magic = take_until_magic_number(&mut i)?;
+    let magic = take_magic_number(&mut i)?;
 
     assert_eq!(MAGIC_NUMBER, magic);
 
@@ -133,7 +139,7 @@ fn parse_section(i: &mut BytesReader) -> Result<Section> {
     Ok(m)
 }
 
-fn take_until_magic_number(reader: &mut BytesReader) -> Result<Vec<u8>> {
+fn take_magic_number(reader: &mut BytesReader) -> Result<Vec<u8>> {
     debug!("take_until_magic_number");
     Ok(consume!(reader, 4u32))
 }
@@ -143,7 +149,7 @@ fn take_version_number(reader: &mut BytesReader) -> Result<Vec<u8>> {
     Ok(consume!(reader, 4u32))
 }
 
-fn parse_custom_section(i: &mut BytesReader, size: u32) -> Result<Section> {
+fn parse_custom_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse custom section");
     let name = take_name(i)?;
 
@@ -343,7 +349,7 @@ fn take_local(i: &mut BytesReader) -> Result<LocalEntry> {
     let n = take_leb_u32(i)?;
     let t = take_valtype(i)?;
 
-    Ok((LocalEntry { count: n, ty: t }))
+    Ok(LocalEntry { count: n, ty: t })
 }
 
 fn take_data<'a, 'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<DataSegment> {
@@ -402,7 +408,7 @@ fn take_global<'a, 'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<
 }
 
 pub(crate) fn take_expr<'b>(
-    mut i: &mut BytesReader,
+    i: &mut BytesReader,
     counter: &'b mut Counter,
 ) -> Result<Vec<Instruction>> {
     debug!("take expr");
@@ -448,19 +454,19 @@ fn take_import_desc(i: &mut BytesReader) -> Result<ImportDesc> {
     let desc = match b[0] {
         0x00 => {
             let t = take_leb_u32(i)?;
-            (ImportDesc::Function { ty: t })
+            ImportDesc::Function { ty: t }
         }
         0x01 => {
             let t = take_tabletype(i)?;
-            (ImportDesc::Table { ty: t })
+            ImportDesc::Table { ty: t }
         }
         0x02 => {
             let t = take_memtype(i)?;
-            (ImportDesc::Memory { ty: t })
+            ImportDesc::Memory { ty: t }
         }
         0x03 => {
-            let (t) = take_globaltype(i)?;
-            (ImportDesc::Global { ty: t })
+            let t = take_globaltype(i)?;
+            ImportDesc::Global { ty: t }
         }
         _ => anyhow::bail!("desc failed"),
     };
@@ -473,22 +479,22 @@ fn take_desc(i: &mut BytesReader) -> Result<ExternalKindType> {
 
     let b = consume!(i, 1u8);
 
-    let (desc) = match b[0] {
+    let desc = match b[0] {
         0x00 => {
             let t = take_leb_u32(i)?;
-            (ExternalKindType::Function { ty: t })
+            ExternalKindType::Function { ty: t }
         }
         0x01 => {
             let t = take_leb_u32(i)?;
-            (ExternalKindType::Table { ty: t })
+            ExternalKindType::Table { ty: t }
         }
         0x02 => {
             let t = take_leb_u32(i)?;
-            (ExternalKindType::Memory { ty: t })
+            ExternalKindType::Memory { ty: t }
         }
         0x03 => {
             let t = take_leb_u32(i)?;
-            (ExternalKindType::Global { ty: t })
+            ExternalKindType::Global { ty: t }
         }
         _ => anyhow::bail!("desc failed"),
     };
@@ -540,13 +546,13 @@ fn take_limits(i: &mut BytesReader) -> Result<Limits> {
         0x00 => {
             let n = take_leb_u32(i)?;
 
-            (Limits::Zero(n))
+            Limits::Zero(n)
         }
         0x01 => {
             let n = take_leb_u32(i)?;
             let m = take_leb_u32(i)?;
 
-            (Limits::One(n, m))
+            Limits::One(n, m)
         }
         _ => anyhow::bail!("Limit has wrong tag"),
     })
@@ -592,7 +598,7 @@ fn take_blocktype(i: &mut BytesReader) -> Result<BlockType> {
             // Weird, Page 96 spec
             let k = take_leb_i33(i)?;
 
-            (BlockType::FuncTy(k as i32))
+            BlockType::FuncTy(k as i32)
         }
     };
 
@@ -622,10 +628,27 @@ fn take_name(i: &mut BytesReader) -> Result<String> {
 }
 
 macro_rules! take_leb {
-    ($function:ident, $reader:expr, $buffer:expr) => {{
-        let bytes = consume_up_to!($reader, $buffer);
+    ($function:ident, $reader:expr, $buffer_len:expr) => {{
+        let length = $reader.fill_buf().unwrap().len();
+        let buffer_len = $buffer_len as usize;
+        debug!("Remaining is {}", length);
+        debug!("Required is {}", buffer_len);
+
+        // Find out whether enough bytes are remaining
+        let threshold_buffer_len = if length < buffer_len {
+            length
+        } else {
+            buffer_len
+        };
+
+        // Read them, but do not consume them
+        let bytes: &[u8] = read!($reader, threshold_buffer_len);
+
+        // leb.1 saves the amount of bytes which were really required
         let leb = $function(&bytes[..]);
-        let _ = consume!($reader, leb.1); //skip the bytes, which contain leb
+
+        // Read them from the reader
+        let _ = consume!($reader, leb.1);
         Ok(leb.0)
     }};
 }
@@ -665,14 +688,23 @@ mod tests {
 
     macro_rules! test_template {
         ($fname:ident, $input:expr, $expected:expr) => {
-            let bytes = [0x7f, 0, 0, 0];
-            let n = take_leb_i32(&mut BufReader::new(&bytes)).unwrap();
+            let n = take_leb_i32(&mut BufReader::new(&$input)).unwrap();
             assert_eq!(n as i128, $expected);
         };
     }
 
     #[test]
+    fn should_consume_one_byte_with_consume() {
+        let bytes = [5u8; 10];
+        let mut reader = std::io::BufReader::new(bytes.as_slice());
+        let buffer = consume!(&mut reader, 1);
+        assert_eq!(buffer.len(), 1);
+        assert_eq!(*buffer.get(0).unwrap(), 5u8);
+    }
+
+    #[test]
     fn test_take_leb_i32() {
+        env_logger::init();
         let bytes = [0x7f, 0, 0, 0];
         let expected = -1;
 
@@ -761,6 +793,7 @@ mod tests {
 
     #[test]
     fn test_empty_wasm() {
+        env_logger::init();
         test_file!("empty.wasm");
     }
 
