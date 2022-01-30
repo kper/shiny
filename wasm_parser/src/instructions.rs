@@ -3,8 +3,8 @@ use log::debug;
 
 use crate::core::*;
 use crate::{
-    consume_byte, take_blocktype, take_f32, take_f64, take_leb_i32, take_leb_i64, take_leb_u32,
-    BytesReader,
+    consume_byte, read, take_blocktype, take_f32, take_f64, take_leb_i32, take_leb_i64,
+    take_leb_u32, BytesReader,
 };
 
 const END_INSTR: &[u8] = &[0x0B];
@@ -371,7 +371,7 @@ fn take_block<'a, 'b>(i: &mut BytesReader, counter: &'a mut Counter) -> Result<I
     let mut instructions = Vec::new();
 
     loop {
-        let k = consume_byte!(i); //0x0B
+        let k = read!(i, 1u8); //0x0B
 
         if k == END_INSTR {
             break;
@@ -395,7 +395,7 @@ fn take_loop<'a, 'b>(i: &mut BytesReader, counter: &'a mut Counter) -> Result<In
     let mut instructions = Vec::new();
 
     loop {
-        let k = consume_byte!(i); //0x0B
+        let k = read!(i, 1u8); //0x0B
 
         if k == END_INSTR {
             break;
@@ -422,7 +422,7 @@ fn take_conditional<'a, 'b>(i: &mut BytesReader, counter: &'a mut Counter) -> Re
     let mut else_instructions = Vec::new();
 
     loop {
-        let k = consume_byte!(i); //0x0B or 0x05
+        let k = read!(i, 1u8); //0x0B or 0x05
 
         if k == END_IF_BLOCK || k == END_INSTR {
             break;
@@ -432,12 +432,12 @@ fn take_conditional<'a, 'b>(i: &mut BytesReader, counter: &'a mut Counter) -> Re
         instructions.push(instruction);
     }
 
-    let k = consume_byte!(i); //0x0B or 0x05
+    let k = read!(i, 1u8); //0x0B or 0x05
 
     if k == END_IF_BLOCK {
         //THIS IS THE ELSE BLOCK
         loop {
-            let k = consume_byte!(i); //0x0B
+            let k = read!(i, 1u8); //0x0B
 
             if k == END_INSTR {
                 break;

@@ -4,6 +4,7 @@
 extern crate log;
 
 use log::debug;
+use log::info;
 
 pub mod core;
 mod instructions;
@@ -46,9 +47,12 @@ macro_rules! read_wasm {
 macro_rules! consume {
     ($reader:expr, $num:expr) => {{
         use std::io::prelude::*;
+        debug!("before consumption {:x?}", $reader.fill_buf().unwrap());
         let mut tmp = vec![0u8; $num as usize];
         debug!("Consuming {} bytes", $num);
         $reader.read_exact(&mut tmp).unwrap();
+
+        debug!("after consumption {:x?}", $reader.fill_buf().unwrap());
 
         tmp
     }};
@@ -59,7 +63,10 @@ macro_rules! consume_byte {
     ($reader:expr) => {{
         use std::io::prelude::*;
         let mut tmp: [u8; 1] = [0u8; 1];
+        debug!("before consumption {:x?}", $reader.fill_buf().unwrap());
+        debug!("Consuming {} bytes", 1);
         $reader.read_exact(&mut tmp).unwrap();
+        debug!("after consumption {:x?}", $reader.fill_buf().unwrap());
 
         tmp
     }};
@@ -70,7 +77,24 @@ macro_rules! consume_up_to {
     ($reader:expr, $num:expr) => {{
         use std::io::prelude::*;
         let mut tmp = vec![0u8; $num as usize];
-        let _ = $reader.read(&mut tmp).expect("Reading bytes failed");
+        debug!("before consumption {:x?}", $reader.fill_buf().unwrap());
+        let read = $reader.read(&mut tmp).expect("Reading bytes failed");
+        debug!("Consuming {} bytes", read);
+        debug!("after consumption {:x?}", $reader.fill_buf().unwrap());
+
+        tmp
+    }};
+}
+
+#[macro_export]
+macro_rules! consume_to_end {
+    ($reader:expr) => {{
+        use std::io::prelude::*;
+        let mut tmp = Vec::new();
+        debug!("before consumption {:x?}", $reader.fill_buf().unwrap());
+        let read = $reader.read_to_end(&mut tmp).expect("Reading bytes failed");
+        debug!("Consuming {} bytes", read);
+        debug!("after consumption {:x?}", $reader.fill_buf().unwrap());
 
         tmp
     }};
@@ -98,6 +122,7 @@ pub fn parse(content: Bytes) -> Result<Module> {
 }
 
 fn parse_module(mut i: BytesReader) -> Result<Vec<Section>> {
+    debug!("module {:x?}", i.fill_buf().unwrap());
     let magic = take_magic_number(&mut i)?;
 
     assert_eq!(MAGIC_NUMBER, magic);
@@ -105,8 +130,9 @@ fn parse_module(mut i: BytesReader) -> Result<Vec<Section>> {
     let _version = take_version_number(&mut i)?;
 
     let mut sections = Vec::new();
-    while i.has_data_left().is_ok() {
+    while i.has_data_left().unwrap_or(false) {
         let section = parse_section(&mut i)?;
+        debug!("section {:#?}", section);
         sections.push(section);
     }
 
@@ -118,7 +144,7 @@ fn parse_section(i: &mut BytesReader) -> Result<Section> {
     let size = take_leb_u32(i)?;
     let mut counter = Counter::default();
 
-    debug!("SECTION {:?} {:?}", n, size);
+    info!("SECTION {:?} with size {:?}", n, size);
 
     let m = match n[0] {
         0 => parse_custom_section(i, size)?,
@@ -153,7 +179,11 @@ fn parse_custom_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
     debug!("parse custom section");
     let name = take_name(i)?;
 
-    Ok(Section::Custom(CustomSection { name }))
+    consume_to_end!(i);
+
+    let section = Section::Custom(CustomSection { name });
+
+    Ok(section)
 }
 
 fn parse_type_section(i: &mut BytesReader, _size: u32) -> Result<Section> {
@@ -302,33 +332,43 @@ fn parse_code_section<'a, 'b>(
 ) -> Result<Section> {
     debug!("parse_code_section");
 
-    let times = take_leb_u32(i)?;
-    let mut codes = Vec::with_capacity(times as usize);
+    let function_num = take_leb_u32(i)?;
 
-    for _ in 0..times {
-        let code = take_code(i, counter)?;
+    debug!("Function count is {} in code section", function_num);
+
+    let mut codes = Vec::with_capacity(function_num as usize);
+
+    for _ in 0..function_num {
+        let code = take_code_function(i, counter)?;
+        debug!("code {:#?}", code);
         codes.push(code);
     }
 
     Ok(Section::Code(CodeSection { entries: codes }))
 }
 
-fn take_code<'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<FunctionBody> {
-    debug!("parse_code");
+fn take_code_function<'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<FunctionBody> {
+    debug!("Parsing code function");
+    debug!("instructions of code function {:x?}", i.fill_buf().unwrap());
 
-    let _size = take_leb_u32(i)?;
-    let k = take_func(i, counter)?;
+    let size = take_leb_u32(i)?;
 
-    Ok(k)
+    debug!("Size is {}", size);
+
+    take_func(i, counter)
 }
 
 fn take_func<'b>(i: &mut BytesReader, counter: &'b mut Counter) -> Result<FunctionBody> {
     debug!("take_func");
 
-    let times = take_leb_u32(i)?;
-    let mut locals = Vec::with_capacity(times as usize);
+    let local_length = take_leb_u32(i)?;
 
-    for _ in 0..times {
+    debug!("Size of locals is {}", local_length);
+
+    let mut locals = Vec::with_capacity(local_length as usize);
+
+    debug!("Parsing locals");
+    for _ in 0..local_length {
         let local = take_local(i)?;
         locals.push(local);
     }
@@ -416,12 +456,15 @@ pub(crate) fn take_expr<'b>(
     let mut instructions = Vec::new();
 
     loop {
-        let k = consume_byte!(i);
+        // Checking whether the first instruction is an end instruction.
+        // Therefore not reading it.
+        let k = read!(i, 1u8);
 
         if k == END_INSTR {
             break;
         }
 
+        debug!("instructions {:x?}", i.fill_buf().unwrap());
         let instruction = instructions::parse_instr(i, counter)?;
         instructions.push(instruction);
     }
@@ -436,7 +479,11 @@ fn take_import(i: &mut BytesReader) -> Result<ImportEntry> {
     debug!("take_import");
 
     let module_name = take_name(i)?;
+
+    debug!("Module name is {}", module_name);
     let name = take_name(i)?;
+
+    debug!("name is {}", name);
     let desc = take_import_desc(i)?;
 
     Ok(ImportEntry {
@@ -588,7 +635,7 @@ fn take_valtype(i: &mut BytesReader) -> Result<ValueType> {
 
 fn take_blocktype(i: &mut BytesReader) -> Result<BlockType> {
     debug!("take_blocktype");
-    let n = consume!(i, 1u8);
+    let n = consume_byte!(i);
 
     let bty = match n[0] {
         0x40 => BlockType::Empty,
@@ -622,9 +669,15 @@ pub(crate) fn take_f64(i: &mut BytesReader) -> Result<f64> {
 fn take_name(i: &mut BytesReader) -> Result<String> {
     debug!("take_name");
     let times = take_leb_u32(i)?;
+    debug!("Length of string is {}", times);
     let bytes = consume!(i, times);
+    assert_eq!(bytes.len(), times as usize);
 
-    Ok(String::from_utf8(bytes).unwrap())
+    let converted_string = String::from_utf8(bytes).unwrap();
+
+    debug!("Deserialized string: {}", converted_string);
+
+    Ok(converted_string)
 }
 
 macro_rules! take_leb {
@@ -635,7 +688,7 @@ macro_rules! take_leb {
         debug!("Required is {}", buffer_len);
 
         // Find out whether enough bytes are remaining
-        let threshold_buffer_len = if length < buffer_len {
+        let threshold_buffer_len = if length <= buffer_len {
             length
         } else {
             buffer_len
@@ -704,7 +757,6 @@ mod tests {
 
     #[test]
     fn test_take_leb_i32() {
-        env_logger::init();
         let bytes = [0x7f, 0, 0, 0];
         let expected = -1;
 
@@ -716,7 +768,7 @@ mod tests {
         let bytes = [0x7f, 0, 0, 0];
         let expected = -1;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i33, bytes, expected);
     }
 
     #[test]
@@ -724,7 +776,7 @@ mod tests {
         let bytes = [0x7f, 0, 0, 0];
         let expected = -1;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
@@ -737,10 +789,11 @@ mod tests {
 
     #[test]
     fn test_take_leb_i64_3() {
+        env_logger::init();
         let bytes = [0x80, 0x7f];
-        let expected = -120;
+        let expected = -128;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
@@ -748,7 +801,7 @@ mod tests {
         let bytes = [135u8, 0x01];
         let expected = 135;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_u32, bytes, expected);
     }
 
     #[test]
@@ -772,7 +825,7 @@ mod tests {
         let bytes = [0x80, 0xc0, 0x00];
         let expected = 8192;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
@@ -780,7 +833,7 @@ mod tests {
         let bytes = [0x80, 0x40];
         let expected = -8192;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
@@ -788,12 +841,11 @@ mod tests {
         let bytes = [0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x7f];
         let expected: i128 = -9223372036854775808;
 
-        test_template!(take_leb_i32, bytes, expected);
+        test_template!(take_leb_i64, bytes, expected);
     }
 
     #[test]
     fn test_empty_wasm() {
-        env_logger::init();
         test_file!("empty.wasm");
     }
 
@@ -834,6 +886,7 @@ mod tests {
 
     #[test]
     fn test_if_loop() {
+        env_logger::init();
         test_file!("if_loop.wasm");
     }
 
